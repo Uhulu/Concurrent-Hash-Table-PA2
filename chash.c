@@ -148,8 +148,69 @@ void cleanupHashTable() {
     }
 }
 
+// read next line and split around commas
+void parseCommand(FILE* commands, char destination[][20]) {
+    int c;
+    int i = 0;
+    for (; (c = fgetc(commands)) != ','; i++)
+    {
+        destination[0][i] = c;
+    }
+    destination[0][i] = '\0';
+    for (i = 0; (c = fgetc(commands)) != ','; i++)
+    {
+        destination[1][i] = c;
+    }
+    destination[1][i] = '\0';
+    for (i = 0; (c = fgetc(commands)) != '\n' && c != EOF; i++)
+    {
+        destination[2][i] = c;
+    }
+    destination[2][i] = '\0';
+}
+
 int main() {
     concurrentHashTable = createTable();
+
+    // read from file
+    FILE* commands = fopen("commands.txt", "r");
+
+    // open output file
+    FILE* output = fopen("output.txt", "w");
+    
+    // initialize command reader
+    int cmdParamLength = 20;
+    int cmdParameters = 3;
+    char cmdPieces[cmdParameters][cmdParamLength];
+
+    // get number of threads
+    parseCommand(commands, cmdPieces);
+    int threads = atoi(cmdPieces[1]);
+    fprintf(output, "Running %d threads\n", threads);
+
+    while (69) // while true
+    {
+        // scan command
+        parseCommand(commands, cmdPieces);
+        
+        if (feof(commands)) // end of file
+            break;
+        
+        // !strcmp === strings equal
+        // instructions and sample output.txt have different formats, I chose the easier one
+        if (!strcmp(cmdPieces[0], "insert")) {
+            insert((uint8_t*)cmdPieces[1], atoi(cmdPieces[2]));
+            fprintf(output, "%llu,INSERT,%s,%s\n", time(0), cmdPieces[1], cmdPieces[2]);
+        }
+        else if (!strcmp(cmdPieces[0], "delete")) {
+            delete((uint8_t*)cmdPieces[1]);
+            fprintf(output, "%llu,DELETE,%s\n", time(0), cmdPieces[1]);
+        }
+        else if (!strcmp(cmdPieces[0], "search")) {
+            search((uint8_t*)cmdPieces[1]);
+            fprintf(output, "%llu,SEARCH,%s\n", time(0), cmdPieces[1]);
+        }
+    }
 
     // Insert entries
     printf("Inserting entries...\n");
@@ -196,6 +257,11 @@ int main() {
     // Cleanup
     cleanupHashTable();
     printf("\nHash table cleanup complete.\n");
+
+
+    // close files
+    fclose(commands);
+    fclose(output);
 
     return 0;
 }
@@ -258,6 +324,7 @@ int main() {
     
 
     return 0;
+    
 }
 */
 

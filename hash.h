@@ -23,6 +23,7 @@ void insert(uint8_t* key, uint32_t value);
 void delete(uint8_t* key);
 void cleanupHashTable();
 uint32_t search(uint8_t* key);
+void parseCommand(FILE* commands, char destination[][20]);
 
 
 // Global Variables
