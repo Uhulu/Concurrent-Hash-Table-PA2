@@ -149,6 +149,59 @@ void cleanupHashTable() {
 }
 
 int main() {
+    concurrentHashTable = createTable();
+
+    // Insert entries
+    printf("Inserting entries...\n");
+    insert((uint8_t*)"Richard Garriot", 40000);
+    insert((uint8_t*)"Sid Meier", 50000);
+    insert((uint8_t*)"Shigeru Miyamoto", 51000);
+
+    // Delete an entry
+    printf("\nDeleting entry for Sid Meier...\n");
+    delete((uint8_t*)"Sid Meier");
+
+    // Insert more entries
+    insert((uint8_t*)"Hideo Kojima", 45000);
+    insert((uint8_t*)"Gabe Newell", 49000);
+    insert((uint8_t*)"Roberta Williams", 45900);
+
+    // Delete another entry
+    printf("\nDeleting entry for Richard Garriot...\n");
+    delete((uint8_t*)"Richard Garriot");
+
+    // Insert the final entry
+    insert((uint8_t*)"Carol Shaw", 41000);
+
+    // Search entries
+    printf("\nSearching for Sid Meier...\n");
+    uint32_t salary = search((uint8_t*)"Sid Meier");
+    if (salary != 0) {
+        printf("Found Sid Meier with salary: %u\n", salary);
+    }
+    else {
+        printf("No record found for Sid Meier\n");
+    }
+
+    // Search entries
+    printf("\nSearching for Gabe Newell...\n");
+    salary = search((uint8_t*)"Gabe Newell");
+    if (salary != 0) {
+        printf("Found Gabe Newell with salary: %u\n", salary);
+    }
+    else {
+        printf("No record found for Sid Meier\n");
+    }
+
+    // Cleanup
+    cleanupHashTable();
+    printf("\nHash table cleanup complete.\n");
+
+    return 0;
+}
+
+/*
+int main() {
 
     concurrentHashTable = createTable();
     
@@ -206,3 +259,5 @@ int main() {
 
     return 0;
 }
+*/
+
