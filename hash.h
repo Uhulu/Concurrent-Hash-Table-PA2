@@ -1,12 +1,11 @@
-// Concurrent Hash Table definitions
-
+// Definitions
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-// Linked List Node
+// Hash Table Struct
 typedef struct hash_struct
 {
 	uint32_t hash;
