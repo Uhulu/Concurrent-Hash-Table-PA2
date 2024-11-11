@@ -128,7 +128,7 @@ void delete(uint8_t* key, uint32_t value) {
 
     timestamp = time(NULL);
     printf("%ld,WRITE LOCK RELEASED\n", timestamp);
-    pthread_rwlock_unlock(&write_locks[index]);
+    pthread_mutex_unlock(&write_locks[index]);
     lockReleases++;
 }
 
