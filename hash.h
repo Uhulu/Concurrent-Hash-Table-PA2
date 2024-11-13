@@ -21,11 +21,21 @@ hashRecord* createNode(uint8_t* key, uint32_t value, uint32_t hashValue);
 uint32_t jenkinsOneAtATime(uint8_t* key, size_t length);
 void insert(uint8_t* key, uint32_t value);
 void delete(uint8_t* key);
+uint32_t search(uint8_t* key);
 void cleanupHashTable();
 uint32_t search(uint8_t* key);
 void parseCommand(FILE* commands, char destination[][20]);
+void* handleCommand(void* arg);
 
 
 // Global Variables
 hashRecord** concurrentHashTable;
-size_t tableSize;
+pthread_t* threadsArray;
+size_t tableSize = 10;
+int numThreads;
+int lockAcquisitions = 0;
+int lockReleases = 0;
+pthread_mutex_t* write_locks;
+pthread_rwlock_t* read_locks;
+FILE* commands;
+FILE* output;

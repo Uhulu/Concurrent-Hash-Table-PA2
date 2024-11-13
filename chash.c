@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <time.h> 
+#include <math.h>
 #include "hash.h"
 #define MAX_LINE_LENGTH 1000
 #define tableSize 10 // Only for testing purposes
@@ -19,6 +21,13 @@ hashRecord** createTable() {
         concurrentHashTable[i] = NULL;
 
     return concurrentHashTable;
+}
+
+// Function to get a current timestamp in seconds.
+time_t currentTimestamp() {
+    time_t seconds;
+    seconds = time(NULL);
+    return seconds;
 }
 
 hashRecord* createNode(uint8_t* key, uint32_t value, uint32_t hashValue) {
@@ -56,14 +65,21 @@ uint32_t jenkinsOneAtATime(uint8_t* key, size_t length) {
 
 void insert(uint8_t* key, uint32_t value) {
 
+    time_t timestamp = currentTimestamp();
     int keyLen = strlen((char*)key);
     uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
     int index = hashValue % tableSize;
     
-    
+
+    // Acquire the write lock   
+    pthread_mutex_lock(&write_locks[index]);
+    timestamp = currentTimestamp();
+    fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
+    // Print the insert operation
+    fprintf(output, "%ld: INSERT,%u,%s,%u\n", timestamp, hashValue, key, value);
+    lockAcquisitions++;
 
     if (concurrentHashTable[index] != NULL) {
-
         hashRecord* current = concurrentHashTable[index];
 
         while (current->next && (current->hash != hashValue || strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) != 0)) {
@@ -72,14 +88,33 @@ void insert(uint8_t* key, uint32_t value) {
 
         if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
             current->salary = value;
+            // Release the write lock and return since the value is updated
+            pthread_mutex_unlock(&write_locks[index]);
+            timestamp = currentTimestamp();
+            fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+            lockReleases++;
             return;
         }
-
     }
 
     hashRecord* node = createNode(key, value, hashValue);
+
+    if (node == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+        pthread_mutex_unlock(&write_locks[index]);
+        timestamp = currentTimestamp();
+        fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+        lockReleases++;
+        return;
+    }
     node->next = concurrentHashTable[index];
     concurrentHashTable[index] = node;
+
+    // Release the write lock after inserting   
+    pthread_mutex_unlock(&write_locks[index]);
+    timestamp = currentTimestamp();
+    fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+    lockReleases++;
    
 }
 
@@ -88,6 +123,15 @@ void delete(uint8_t* key) {
     int keyLen = strlen((char*)key);
     uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
     int index = hashValue % tableSize;
+
+    time_t timestamp = time(NULL);    
+
+    pthread_mutex_lock(&write_locks[index]);
+    fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
+    fprintf(output, "%ld: DELETE,%u,%s\n", timestamp, hashValue, key);
+
+    lockAcquisitions++;
+
 
     // Pointer to traverse the linked list at hashTable[index]
     hashRecord* current = concurrentHashTable[index];
@@ -112,30 +156,49 @@ void delete(uint8_t* key) {
 
         free(current);  // Free the memory of the deleted node
     }
-}
 
+    timestamp = time(NULL);
+    fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+    pthread_mutex_unlock(&write_locks[index]);
+    lockReleases++;
+}
 
 uint32_t search(uint8_t* key) {
 
+    time_t timestamp = currentTimestamp();
     int keyLen = strlen((char*)key);
     uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
     int index = hashValue % tableSize;
 
+    fprintf(output, "%ld: READ LOCK ACQUIRED\n", timestamp);
+
+    // Acquire read lock for concurrent access
+    pthread_rwlock_rdlock(&read_locks[index]);
+    lockAcquisitions++;
+
     hashRecord* current = concurrentHashTable[index];
 
     while (current != NULL) {
-
         if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
             uint32_t salary = current->salary;
+            // Release read lock after reading
+            fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
+            pthread_rwlock_unlock(&read_locks[index]);
+            lockReleases++;
             return salary;
         }
         current = current->next;
     }
 
+    // Release read lock after reading
+    pthread_rwlock_unlock(&read_locks[index]);
+    timestamp = currentTimestamp();
+    fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
+    lockReleases++;
+
     // Key not found
     return 0;
 }
-
 
 void cleanupHashTable() {
     for (int i = 0; i < tableSize; i++) {
@@ -169,14 +232,50 @@ void parseCommand(FILE* commands, char destination[][20]) {
     destination[2][i] = '\0';
 }
 
+void* handleCommand(void* arg) {
+    char** cmdPieces = (char**)arg;
+
+    if (!strcmp(cmdPieces[0], "insert")) {
+        insert((uint8_t*)cmdPieces[1], (uint32_t)atoi(cmdPieces[2]));
+    }
+    else if (!strcmp(cmdPieces[0], "delete")) {
+        delete((uint8_t*)cmdPieces[1]);
+        
+    }
+    else if (!strcmp(cmdPieces[0], "search")) {         
+
+        uint32_t salary = search((uint8_t*)cmdPieces[1]);
+
+        if (salary != 0) {
+            fprintf(output, "SEARCH: %s FOUND with salary %u\n", cmdPieces[1], salary);
+        }
+        else {
+            fprintf(output, "SEARCH: %s NOT FOUND\n", cmdPieces[1]);
+        }
+    }
+
+    return NULL;
+}
+
 int main() {
+
     concurrentHashTable = createTable();
 
+
+    // Initialize Locks
+    read_locks = (pthread_rwlock_t*)malloc(tableSize * sizeof(pthread_rwlock_t));
+    write_locks = (pthread_mutex_t*)malloc(tableSize * sizeof(pthread_mutex_t));
+
+    for (int i = 0; i < tableSize; i++) {
+        pthread_rwlock_init(&read_locks[i], NULL);
+        pthread_mutex_init(&write_locks[i], NULL);
+    }
+
     // read from file
-    FILE* commands = fopen("commands.txt", "r");
+    commands = fopen("commands.txt", "r");
 
     // open output file
-    FILE* output = fopen("output.txt", "w");
+    output = fopen("output.txt", "w");
     
     // initialize command reader
     int cmdParamLength = 20;
@@ -188,143 +287,42 @@ int main() {
     int threads = atoi(cmdPieces[1]);
     fprintf(output, "Running %d threads\n", threads);
 
-    while (69) // while true
+    threadsArray = (pthread_t*)malloc(numThreads * sizeof(pthread_t));
+
+    // Loop through the commands
+    for(int i = 0; i < threads; i++)
     {
         // scan command
-        parseCommand(commands, cmdPieces);
+        parseCommand(commands, cmdPieces);     
+
+        // Allocate command arguments for each thread
+        char** cmdArgs = (char**)malloc(3 * sizeof(char*));
+
+        for (int j = 0; j < 3; j++) {
+            cmdArgs[j] = strdup(cmdPieces[j]);  // Use strdup to simplify allocation
+        }
+
+        // Create a thread to handle each command
+        pthread_create(&threadsArray[i], NULL, handleCommand, (void*)cmdArgs);
         
-        if (feof(commands)) // end of file
-            break;
-        
-        // !strcmp === strings equal
-        // instructions and sample output.txt have different formats, I chose the easier one
-        if (!strcmp(cmdPieces[0], "insert")) {
-            insert((uint8_t*)cmdPieces[1], atoi(cmdPieces[2]));
-            fprintf(output, "%llu,INSERT,%s,%s\n", time(0), cmdPieces[1], cmdPieces[2]);
-        }
-        else if (!strcmp(cmdPieces[0], "delete")) {
-            delete((uint8_t*)cmdPieces[1]);
-            fprintf(output, "%llu,DELETE,%s\n", time(0), cmdPieces[1]);
-        }
-        else if (!strcmp(cmdPieces[0], "search")) {
-            search((uint8_t*)cmdPieces[1]);
-            fprintf(output, "%llu,SEARCH,%s\n", time(0), cmdPieces[1]);
-        }
     }
 
-    // Insert entries
-    printf("Inserting entries...\n");
-    insert((uint8_t*)"Richard Garriot", 40000);
-    insert((uint8_t*)"Sid Meier", 50000);
-    insert((uint8_t*)"Shigeru Miyamoto", 51000);
-
-    // Delete an entry
-    printf("\nDeleting entry for Sid Meier...\n");
-    delete((uint8_t*)"Sid Meier");
-
-    // Insert more entries
-    insert((uint8_t*)"Hideo Kojima", 45000);
-    insert((uint8_t*)"Gabe Newell", 49000);
-    insert((uint8_t*)"Roberta Williams", 45900);
-
-    // Delete another entry
-    printf("\nDeleting entry for Richard Garriot...\n");
-    delete((uint8_t*)"Richard Garriot");
-
-    // Insert the final entry
-    insert((uint8_t*)"Carol Shaw", 41000);
-
-    // Search entries
-    printf("\nSearching for Sid Meier...\n");
-    uint32_t salary = search((uint8_t*)"Sid Meier");
-    if (salary != 0) {
-        printf("Found Sid Meier with salary: %u\n", salary);
-    }
-    else {
-        printf("No record found for Sid Meier\n");
+    // Join threads
+    for (int i = 0; i < numThreads; i++) {
+        pthread_join(threadsArray[i], NULL);
     }
 
-    // Search entries
-    printf("\nSearching for Gabe Newell...\n");
-    salary = search((uint8_t*)"Gabe Newell");
-    if (salary != 0) {
-        printf("Found Gabe Newell with salary: %u\n", salary);
-    }
-    else {
-        printf("No record found for Sid Meier\n");
+   /* for (int i = 0; i < tableSize; i++) {
+        pthread_rwlock_destroy(&read_locks[i]);
+        pthread_mutex_destroy(&write_locks[i]);
     }
 
-    // Cleanup
-    cleanupHashTable();
-    printf("\nHash table cleanup complete.\n");
-
-
-    // close files
+    free(threadsArray);
+    free(read_locks);
+    free(write_locks);
     fclose(commands);
     fclose(output);
+    cleanupHashTable();*/
 
     return 0;
 }
-
-/*
-int main() {
-
-    concurrentHashTable = createTable();
-    
-    // Insert entries
-    printf("Inserting entries...\n");
-    insert((uint8_t*)"Alice", 50000);
-    insert((uint8_t*)"Bob", 60000);
-    insert((uint8_t*)"Charlie", 70000);
-
-    
-    // Search entries
-    printf("\nSearching entries...\n");
-    uint32_t salary = search((uint8_t*)"Alice");
-    if (salary != 0) {
-        printf("Found Alice with salary: %u\n", salary);
-    }
-    else {
-        printf("No record found for Alice\n");
-    }
-
-    salary = search((uint8_t*)"Bob");
-    if (salary != 0) {
-        printf("Found Bob with salary: %u\n", salary);
-    }
-    else {
-        printf("No record found for Bob\n");
-    }
-
-    salary = search((uint8_t*)"Eve");
-    if (salary != 0) {
-        printf("Found Eve with salary: %u\n", salary);
-    }
-    else {
-        printf("No record found for Eve\n");
-    }    
-
-    // Delete an entry
-    printf("\nDeleting entry for Bob...\n");
-    delete((uint8_t*)"Bob");
-
-    // Search after deletion
-    printf("\nSearching for Bob after deletion...\n");
-    salary = search((uint8_t*)"Bob");
-    if (salary != 0) {
-        printf("Found Bob with salary: %u\n", salary);
-    }
-    else {
-        printf("No record found for Bob\n");
-    }
-
-    // Cleanup
-    cleanupHashTable();
-    printf("\nHash table cleanup complete.\n");
-    
-
-    return 0;
-    
-}
-*/
-
