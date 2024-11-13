@@ -32,8 +32,8 @@ int compareHashRecords(const void* a, const void* b);
 // Global Variables
 hashRecord** concurrentHashTable;
 pthread_t* threadsArray;
-size_t tableSize = 10;
-int numThreads;
+int threads;
+int tableSize;
 int lockAcquisitions = 0;
 int lockReleases = 0;
 pthread_mutex_t* write_locks;

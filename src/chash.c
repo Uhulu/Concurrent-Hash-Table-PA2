@@ -6,7 +6,6 @@
 #include <math.h>
 #include "hash.h"
 #define MAX_LINE_LENGTH 1000
-#define tableSize 10 // Only for testing purposes
 
 hashRecord** createTable() {
 
@@ -182,9 +181,6 @@ uint32_t search(uint8_t* key) {
 	while (current != NULL) {
 		if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
 			uint32_t salary = current->salary;
-			// Release read lock after reading
-			// fprintf(output, "SEARCH: %s FOUND with salary %u\n", current->name, current->salary);
-			// fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
 			pthread_rwlock_unlock(&read_locks[index]);
 			lockReleases++;
 			return salary;
@@ -195,8 +191,6 @@ uint32_t search(uint8_t* key) {
 	// Release read lock after reading
 	pthread_rwlock_unlock(&read_locks[index]);
 	timestamp = currentTimestamp();
-	// fprintf(output, "SEARCH: NOT FOUND\n");
-	// fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
 	lockReleases++;
 
 	// Key not found
@@ -310,18 +304,6 @@ void* handleCommand(void* arg) {
 
 int main() {
 
-	concurrentHashTable = createTable();
-
-
-	// Initialize Locks
-	read_locks = (pthread_rwlock_t*)malloc(tableSize * sizeof(pthread_rwlock_t));
-	write_locks = (pthread_mutex_t*)malloc(tableSize * sizeof(pthread_mutex_t));
-
-	for (int i = 0; i < tableSize; i++) {
-		pthread_rwlock_init(&read_locks[i], NULL);
-		pthread_mutex_init(&write_locks[i], NULL);
-	}
-
 	// read from file
 	commands = fopen("commands.txt", "r");
 
@@ -336,7 +318,19 @@ int main() {
 	// get number of threads
 	parseCommand(commands, cmdPieces);
 	int threads = atoi(cmdPieces[1]);
+	tableSize = threads;
 	fprintf(output, "Running %d threads\n", threads);
+
+	concurrentHashTable = createTable();
+
+	// Initialize Locks
+	read_locks = (pthread_rwlock_t*)malloc(tableSize * sizeof(pthread_rwlock_t));
+	write_locks = (pthread_mutex_t*)malloc(tableSize * sizeof(pthread_mutex_t));
+
+	for (int i = 0; i < tableSize; i++) {
+		pthread_rwlock_init(&read_locks[i], NULL);
+		pthread_mutex_init(&write_locks[i], NULL);
+	}
 
 	threadsArray = (pthread_t*)malloc(threads * sizeof(pthread_t));
 
