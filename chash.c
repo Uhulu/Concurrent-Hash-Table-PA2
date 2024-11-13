@@ -287,7 +287,7 @@ int main() {
     int threads = atoi(cmdPieces[1]);
     fprintf(output, "Running %d threads\n", threads);
 
-    threadsArray = (pthread_t*)malloc(numThreads * sizeof(pthread_t));
+    threadsArray = (pthread_t*)malloc(threads * sizeof(pthread_t));
 
     // Loop through the commands
     for(int i = 0; i < threads; i++)
@@ -308,7 +308,7 @@ int main() {
     }
 
     // Join threads
-    for (int i = 0; i < numThreads; i++) {
+    for (int i = 0; i < threads; i++) {
         pthread_join(threadsArray[i], NULL);
     }
 
