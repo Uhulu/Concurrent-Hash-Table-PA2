@@ -64,137 +64,172 @@ uint32_t jenkinsOneAtATime(uint8_t* key, size_t length) {
 
 void insert(uint8_t* key, uint32_t value) {
 
-	time_t timestamp = currentTimestamp();
-	int keyLen = strlen((char*)key);
-	uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
-	int index = hashValue % tableSize;
+    // Get the current timestamp
+    time_t timestamp = currentTimestamp();
+    int keyLen = strlen((char*)key);
 
+    // Compute the hash value of the key using the Jenkins one-at-a-time hash function
+    uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
 
-	// Acquire the write lock   
-	pthread_mutex_lock(&write_locks[index]);
-	timestamp = currentTimestamp();
-	fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
-	// Print the insert operation
-	fprintf(output, "%ld: INSERT,%u,%s,%u\n", timestamp, hashValue, key, value);
-	lockAcquisitions++;
+    // Compute the index in the hash table
+    int index = hashValue % tableSize;
 
-	if (concurrentHashTable[index] != NULL) {
-		hashRecord* current = concurrentHashTable[index];
+    // Acquire the write lock to ensure exclusive access for writing
+    pthread_mutex_lock(&write_locks[index]);
+    timestamp = currentTimestamp();
+    fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
 
-		while (current->next && (current->hash != hashValue || strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) != 0)) {
-			current = current->next;
-		}
+    // Print the insert operation to the output file
+    fprintf(output, "%ld: INSERT,%u,%s,%u\n", timestamp, hashValue, key, value);
+    lockAcquisitions++;
 
-		if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
-			current->salary = value;
-			// Release the write lock and return since the value is updated
-			pthread_mutex_unlock(&write_locks[index]);
-			timestamp = currentTimestamp();
-			fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
-			lockReleases++;
-			return;
-		}
-	}
+    // Check if there is an existing entry in the hash table at the computed index
+    if (concurrentHashTable[index] != NULL) {
+        hashRecord* current = concurrentHashTable[index];
 
-	hashRecord* node = createNode(key, value, hashValue);
+        // Traverse the linked list to find the node with the same hash and key
+        while (current->next && (current->hash != hashValue || strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) != 0)) {
+            current = current->next;
+        }
 
-	if (node == NULL) {
-		fprintf(stderr, "Memory allocation failed\n");
-		pthread_mutex_unlock(&write_locks[index]);
-		timestamp = currentTimestamp();
-		fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
-		lockReleases++;
-		return;
-	}
-	node->next = concurrentHashTable[index];
-	concurrentHashTable[index] = node;
+        // If the node with the same hash and key is found, update its salary
+        if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
+            current->salary = value;
 
-	// Release the write lock after inserting   
-	pthread_mutex_unlock(&write_locks[index]);
-	timestamp = currentTimestamp();
-	fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
-	lockReleases++;
+            // Release the write lock and return as the value is updated
+            pthread_mutex_unlock(&write_locks[index]);
+            timestamp = currentTimestamp();
+            fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+            lockReleases++;
+            return;
+        }
+    }
 
+    // If the node is not found, create a new node and insert it into the hash table
+    hashRecord* node = createNode(key, value, hashValue);
+
+    // Check if memory allocation for the new node failed
+    if (node == NULL) {
+        fprintf(stderr, "Memory allocation failed\n");
+
+        // Release the write lock in case of failure
+        pthread_mutex_unlock(&write_locks[index]);
+        timestamp = currentTimestamp();
+        fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+        lockReleases++;
+        return;
+    }
+
+    // Insert the new node at the beginning of the linked list at the computed index
+    node->next = concurrentHashTable[index];
+    concurrentHashTable[index] = node;
+
+    // Release the write lock after inserting the new node
+    pthread_mutex_unlock(&write_locks[index]);
+    timestamp = currentTimestamp();
+    fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+    lockReleases++;
 }
+
 
 void delete(uint8_t* key) {
+    // Calculate the key length
+    int keyLen = strlen((char*)key);
 
-	int keyLen = strlen((char*)key);
-	uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
-	int index = hashValue % tableSize;
+    // Compute the hash value of the key using the Jenkins one-at-a-time hash function
+    uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
 
-	time_t timestamp = time(NULL);
+    // Compute the index in the hash table
+    int index = hashValue % tableSize;
 
-	pthread_mutex_lock(&write_locks[index]);
-	fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
-	fprintf(output, "%ld: DELETE,%u,%s\n", timestamp, hashValue, key);
+    // Get the current timestamp
+    time_t timestamp = time(NULL);
 
-	lockAcquisitions++;
+    // Acquire the write lock to ensure exclusive access for writing
+    pthread_mutex_lock(&write_locks[index]);
+    fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
 
+    // Print the delete operation to the output file
+    fprintf(output, "%ld: DELETE,%u,%s\n", timestamp, hashValue, key);
+    lockAcquisitions++;
 
-	// Pointer to traverse the linked list at hashTable[index]
-	hashRecord* current = concurrentHashTable[index];
-	hashRecord* previous = NULL;
+    // Pointer to traverse the linked list at hashTable[index]
+    hashRecord* current = concurrentHashTable[index];
+    hashRecord* previous = NULL;
 
-	// Traverse the list to find the node to delete
-	while (current != NULL && (current->hash != hashValue || strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) != 0)) {
-		previous = current;
-		current = current->next;
-	}
+    // Traverse the list to find the node to delete
+    while (current != NULL && (current->hash != hashValue || strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) != 0)) {
+        previous = current;
+        current = current->next;
+    }
 
-	// If the node was found, delete it
-	if (current != NULL) {
-		if (previous == NULL) {
-			// Node to delete is the first node in the list
-			concurrentHashTable[index] = current->next;
-		}
-		else {
-			// Node to delete is in the middle or end of the list
-			previous->next = current->next;
-		}
+    // If the node was found, delete it
+    if (current != NULL) {
+        if (previous == NULL) {
+            // Node to delete is the first node in the list
+            concurrentHashTable[index] = current->next;
+        } else {
+            // Node to delete is in the middle or end of the list
+            previous->next = current->next;
+        }
 
-		free(current);  // Free the memory of the deleted node
-	}
+        free(current);  // Free the memory of the deleted node
+    }
 
-	timestamp = time(NULL);
-	fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
-	pthread_mutex_unlock(&write_locks[index]);
-	lockReleases++;
+    // Get the current timestamp
+    timestamp = time(NULL);
+
+    // Release the write lock after deletion
+    fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
+    pthread_mutex_unlock(&write_locks[index]);
+    lockReleases++;
 }
 
+
 uint32_t search(uint8_t* key) {
+    // Get the current timestamp
+    time_t timestamp = currentTimestamp();
 
-	time_t timestamp = currentTimestamp();
-	int keyLen = strlen((char*)key);
-	uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
-	int index = hashValue % tableSize;
+    // Calculate the key length
+    int keyLen = strlen((char*)key);
 
-	fprintf(output, "%ld: READ LOCK ACQUIRED\n", timestamp);
-	fprintf(output, "%ld: SEARCH,%u,%s\n", timestamp, hashValue, key);
+    // Compute the hash value of the key using the Jenkins one-at-a-time hash function
+    uint32_t hashValue = jenkinsOneAtATime(key, keyLen);
 
-	// Acquire read lock for concurrent access
-	pthread_rwlock_rdlock(&read_locks[index]);
-	lockAcquisitions++;
+    // Compute the index in the hash table
+    int index = hashValue % tableSize;
 
-	hashRecord* current = concurrentHashTable[index];
+    // Log the read lock acquisition and search operation
+    fprintf(output, "%ld: READ LOCK ACQUIRED\n", timestamp);
+    fprintf(output, "%ld: SEARCH,%u,%s\n", timestamp, hashValue, key);
 
-	while (current != NULL) {
-		if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
-			uint32_t salary = current->salary;
-			pthread_rwlock_unlock(&read_locks[index]);
-			lockReleases++;
-			return salary;
-		}
-		current = current->next;
-	}
+    // Acquire read lock for concurrent access
+    pthread_rwlock_rdlock(&read_locks[index]);
+    lockAcquisitions++;
 
-	// Release read lock after reading
-	pthread_rwlock_unlock(&read_locks[index]);
-	timestamp = currentTimestamp();
-	lockReleases++;
+    // Pointer to traverse the linked list at hashTable[index]
+    hashRecord* current = concurrentHashTable[index];
 
-	// Key not found
-	return 0;
+    // Traverse the list to find the node with the matching hash and key
+    while (current != NULL) {
+        if (current->hash == hashValue && strncmp((char*)current->name, (char*)key, MAX_LINE_LENGTH) == 0) {
+            uint32_t salary = current->salary;
+
+            // Release read lock after reading
+            pthread_rwlock_unlock(&read_locks[index]);
+            lockReleases++;
+            return salary;
+        }
+        current = current->next;
+    }
+
+    // Release read lock after reading
+    pthread_rwlock_unlock(&read_locks[index]);
+    timestamp = currentTimestamp();
+    lockReleases++;
+
+    // Key not found, return 0
+    return 0;
 }
 
 // Helper function for qsort to compare hash values of two hashRecord structs
@@ -205,44 +240,52 @@ int compareHashRecords(const void* a, const void* b) {
 }
 
 void printTable() {
+    // Get the current timestamp
+    time_t timestamp = time(NULL);
 
-	time_t timestamp = time(NULL);
+    // Print the number of lock acquisitions and releases
+    fprintf(output, "Number of lock acquisitions: %d\n", lockAcquisitions);
+    fprintf(output, "Number of lock releases: %d\n", lockReleases);
 
-	fprintf(output, "Number of lock acquisitions: %d\n", lockAcquisitions);
-	fprintf(output, "Number of lock releases: %d\n", lockReleases);
+    // Log the read lock acquisition
+    fprintf(output, "%ld: READ LOCK ACQUIRED\n", timestamp);
+    lockAcquisitions++;
 
-	fprintf(output, "%ld: READ LOCK ACQUIRED\n", timestamp);
-	lockAcquisitions++;
+    // Step 1: Gather all entries into a list
+    // Allocate a dynamic list to store hash records
+    hashRecord** records = malloc(tableSize * sizeof(hashRecord*));
+    int count = 0;
 
-	// Step 1: Gather all entries into a list
-	hashRecord** records = malloc(tableSize * sizeof(hashRecord*)); // Allocate a dynamic list
-	int count = 0;
+    // Traverse the hash table and gather all entries
+    for (int i = 0; i < tableSize; i++) {
+        hashRecord* current = concurrentHashTable[i];
+        while (current != NULL) {
+            records[count++] = current;
+            current = current->next;
+        }
+    }
 
-	for (int i = 0; i < tableSize; i++) {
-		hashRecord* current = concurrentHashTable[i];
-		while (current != NULL) {
-			records[count++] = current;
-			current = current->next;
-		}
-	}
+    // Step 2: Sort the list by hash values
+    qsort(records, count, sizeof(hashRecord*), compareHashRecords);
 
-	// Step 2: Sort the list by hash values
-	qsort(records, count, sizeof(hashRecord*), compareHashRecords);
+    // Step 3: Print sorted entries
+    for (int i = 0; i < count; i++) {
+        fprintf(output, "%u,%s,%u\n", records[i]->hash, records[i]->name, records[i]->salary);
+    }
 
-	// Step 3: Print sorted entries
-	for (int i = 0; i < count; i++) {
-		fprintf(output, "%u,%s,%u\n", records[i]->hash, records[i]->name, records[i]->salary);
-	}
+    // Clean up the temporary list
+    free(records);
 
-	// Clean up the temporary list
-	free(records);
+    // Get the current timestamp
+    timestamp = time(NULL);
 
-	timestamp = time(NULL);
-	lockReleases++;
-	fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
+    // Log the read lock release
+    lockReleases++;
+    fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
 }
 
 
+// Function that clears the hashtable
 void cleanupHashTable() {
 	for (int i = 0; i < tableSize; i++) {
 		hashRecord* current = concurrentHashTable[i];
@@ -303,77 +346,77 @@ void* handleCommand(void* arg) {
 }
 
 int main() {
+    // Open command file for reading
+    commands = fopen("commands.txt", "r");
 
-	// read from file
-	commands = fopen("commands.txt", "r");
+    // Open output file for writing
+    output = fopen("output.txt", "w");
 
-	// open output file
-	output = fopen("output.txt", "w");
+    // Initialize command reader parameters
+    int cmdParamLength = 20;
+    int cmdParameters = 3;
+    char cmdPieces[cmdParameters][cmdParamLength];
 
-	// initialize command reader
-	int cmdParamLength = 20;
-	int cmdParameters = 3;
-	char cmdPieces[cmdParameters][cmdParamLength];
+    // Read the number of threads from the first command
+    parseCommand(commands, cmdPieces);
+    int threads = atoi(cmdPieces[1]);
+    tableSize = threads;
+    fprintf(output, "Running %d threads\n", threads);
 
-	// get number of threads
-	parseCommand(commands, cmdPieces);
-	int threads = atoi(cmdPieces[1]);
-	tableSize = threads;
-	fprintf(output, "Running %d threads\n", threads);
+    // Create and initialize the hash table
+    concurrentHashTable = createTable();
 
-	concurrentHashTable = createTable();
+    // Initialize read and write locks
+    read_locks = (pthread_rwlock_t*)malloc(tableSize * sizeof(pthread_rwlock_t));
+    write_locks = (pthread_mutex_t*)malloc(tableSize * sizeof(pthread_mutex_t));
 
-	// Initialize Locks
-	read_locks = (pthread_rwlock_t*)malloc(tableSize * sizeof(pthread_rwlock_t));
-	write_locks = (pthread_mutex_t*)malloc(tableSize * sizeof(pthread_mutex_t));
+    for (int i = 0; i < tableSize; i++) {
+        pthread_rwlock_init(&read_locks[i], NULL);
+        pthread_mutex_init(&write_locks[i], NULL);
+    }
 
-	for (int i = 0; i < tableSize; i++) {
-		pthread_rwlock_init(&read_locks[i], NULL);
-		pthread_mutex_init(&write_locks[i], NULL);
-	}
+    // Allocate memory for threads
+    threadsArray = (pthread_t*)malloc(threads * sizeof(pthread_t));
 
-	threadsArray = (pthread_t*)malloc(threads * sizeof(pthread_t));
+    // Loop through the commands and create threads to handle each command
+    for (int i = 0; i < threads; i++) {
+        // Parse the next command
+        parseCommand(commands, cmdPieces);
 
-	// Loop through the commands
-	for (int i = 0; i < threads; i++)
-	{
-		// scan command
-		parseCommand(commands, cmdPieces);
+        // Allocate memory for command arguments for each thread
+        char** cmdArgs = (char**)malloc(3 * sizeof(char*));
+        for (int j = 0; j < 3; j++) {
+            cmdArgs[j] = strdup(cmdPieces[j]);  // Use strdup to simplify allocation
+        }
 
-		// Allocate command arguments for each thread
-		char** cmdArgs = (char**)malloc(3 * sizeof(char*));
+        // Create a thread to handle each command
+        pthread_create(&threadsArray[i], NULL, handleCommand, (void*)cmdArgs);
+    }
 
-		for (int j = 0; j < 3; j++) {
-			cmdArgs[j] = strdup(cmdPieces[j]);  // Use strdup to simplify allocation
-		}
+    // Join all threads
+    for (int i = 0; i < threads; i++) {
+        pthread_join(threadsArray[i], NULL);
+    }
 
-		// Create a thread to handle each command
-		pthread_create(&threadsArray[i], NULL, handleCommand, (void*)cmdArgs);
+    // Log that all threads have finished
+    fprintf(output, "Finished all threads.\n");
 
+    // Print the hash table
+    printTable();
 
-	}
+    // Clean up resources
+    for (int i = 0; i < tableSize; i++) {
+        pthread_rwlock_destroy(&read_locks[i]);
+        pthread_mutex_destroy(&write_locks[i]);
+    }
 
-	// Join threads
-	for (int i = 0; i < threads; i++) {
-		pthread_join(threadsArray[i], NULL);
-	}
+    free(threadsArray);
+    free(read_locks);
+    free(write_locks);
+    fclose(commands);
+    fclose(output);
+    cleanupHashTable();
 
-	fprintf(output, "Finished all threads.\n");
-	printTable();
-
-	for (int i = 0; i < tableSize; i++) {
-		pthread_rwlock_destroy(&read_locks[i]);
-		pthread_mutex_destroy(&write_locks[i]);
-	}
-
-	free(threadsArray);
-	free(read_locks);
-	free(write_locks);
-	fclose(commands);
-	fclose(output);
-	cleanupHashTable();
-
-
-
-	return 0;
+    return 0;
 }
+
