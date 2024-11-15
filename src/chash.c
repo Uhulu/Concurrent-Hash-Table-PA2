@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -364,7 +365,7 @@ int main() {
     output = fopen("output.txt", "w");
 
     // Initialize command reader parameters
-    int cmdParamLength = 20;
+    int cmdParamLength = 50;
     int cmdParameters = 3;
     char cmdPieces[cmdParameters][cmdParamLength];
 

@@ -212,7 +212,7 @@ void cleanupHashTable() {
 }
 
 // read next line and split around commas
-void parseCommand(FILE* commands, char destination[][20]) {
+void parseCommand(FILE* commands, char destination[][50]) {
     int c;
     int i = 0;
     for (; (c = fgetc(commands)) != ','; i++)
