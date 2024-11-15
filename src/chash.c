@@ -8,6 +8,7 @@
 #include "hash.h"
 #define MAX_LINE_LENGTH 1000
 
+// Function that creates the hash table.
 hashRecord** createTable() {
 
 	concurrentHashTable = (hashRecord**)malloc(tableSize * sizeof(hashRecord*));
@@ -30,6 +31,7 @@ time_t currentTimestamp() {
 	return seconds;
 }
 
+// Function that creates a node.
 hashRecord* createNode(uint8_t* key, uint32_t value, uint32_t hashValue) {
 
 
@@ -49,6 +51,7 @@ hashRecord* createNode(uint8_t* key, uint32_t value, uint32_t hashValue) {
 	return node;
 }
 
+// Hash function.
 uint32_t jenkinsOneAtATime(uint8_t* key, size_t length) {
 	size_t i = 0;
 	uint32_t hash = 0;
@@ -63,6 +66,7 @@ uint32_t jenkinsOneAtATime(uint8_t* key, size_t length) {
 	return hash;
 }
 
+// Function that inserts into the hash table.
 void insert(uint8_t* key, uint32_t value) {
 
     // Get the current timestamp
@@ -78,11 +82,12 @@ void insert(uint8_t* key, uint32_t value) {
     // Acquire the write lock to ensure exclusive access for writing
     pthread_mutex_lock(&write_locks[index]);
     timestamp = currentTimestamp();
+    lockAcquisitions++;
     fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
 
     // Print the insert operation to the output file
     fprintf(output, "%ld: INSERT,%u,%s,%u\n", timestamp, hashValue, key, value);
-    lockAcquisitions++;
+    
 
     // Check if there is an existing entry in the hash table at the computed index
     if (concurrentHashTable[index] != NULL) {
@@ -132,7 +137,7 @@ void insert(uint8_t* key, uint32_t value) {
     lockReleases++;
 }
 
-
+// Function that deletes from the hash table.
 void delete(uint8_t* key) {
     // Calculate the key length
     int keyLen = strlen((char*)key);
@@ -148,11 +153,12 @@ void delete(uint8_t* key) {
 
     // Acquire the write lock to ensure exclusive access for writing
     pthread_mutex_lock(&write_locks[index]);
+    lockAcquisitions++;
     fprintf(output, "%ld: WRITE LOCK ACQUIRED\n", timestamp);
 
     // Print the delete operation to the output file
     fprintf(output, "%ld: DELETE,%u,%s\n", timestamp, hashValue, key);
-    lockAcquisitions++;
+    
 
     // Pointer to traverse the linked list at hashTable[index]
     hashRecord* current = concurrentHashTable[index];
@@ -182,11 +188,11 @@ void delete(uint8_t* key) {
 
     // Release the write lock after deletion
     fprintf(output, "%ld: WRITE LOCK RELEASED\n", timestamp);
-    pthread_mutex_unlock(&write_locks[index]);
     lockReleases++;
+    pthread_mutex_unlock(&write_locks[index]);
 }
 
-
+// Function that searches in the hash table.
 uint32_t search(uint8_t* key) {
     // Get the current timestamp
     time_t timestamp = currentTimestamp();
@@ -240,15 +246,13 @@ int compareHashRecords(const void* a, const void* b) {
 	return (recordA->hash - recordB->hash);
 }
 
+// Function that print the whole hashtable.
 void printTable() {
     // Get the current timestamp
-    time_t timestamp = time(NULL);
-
-    // Print the number of lock acquisitions and releases
-    fprintf(output, "Number of lock acquisitions: %d\n", lockAcquisitions);
-    fprintf(output, "Number of lock releases: %d\n", lockReleases);
+    time_t timestamp = time(NULL);    
 
     // Log the read lock acquisition
+    pthread_rwlock_rdlock(&read_locks[0]);
     fprintf(output, "%ld: READ LOCK ACQUIRED\n", timestamp);
     lockAcquisitions++;
 
@@ -281,10 +285,10 @@ void printTable() {
     timestamp = time(NULL);
 
     // Log the read lock release
+    pthread_rwlock_unlock(&read_locks[0]);    
     lockReleases++;
     fprintf(output, "%ld: READ LOCK RELEASED\n", timestamp);
 }
-
 
 // Function that clears the hashtable
 void cleanupHashTable() {
@@ -298,7 +302,7 @@ void cleanupHashTable() {
 	}
 }
 
-// read next line and split around commas
+// Function that reads next line and splits around commas.
 void parseCommand(FILE* commands, char destination[][50]) {
     int c;
     int i = 0;
@@ -313,6 +317,7 @@ void parseCommand(FILE* commands, char destination[][50]) {
     if (strcmp(destination[0], "print") == 0) {
         strcpy(destination[1], "0");
         strcpy(destination[2], "0");
+		while ((c = fgetc(commands)) != '\n' && c != EOF);  // Move to the end of the line
         return;
     }
 
@@ -329,6 +334,7 @@ void parseCommand(FILE* commands, char destination[][50]) {
     destination[2][i] = '\0';
 }
 
+// Funtion that handles the command function calls.
 void* handleCommand(void* arg) {
     char** cmdPieces = (char**)arg;
 
@@ -350,13 +356,14 @@ void* handleCommand(void* arg) {
 
         fprintf(output, "%ld: READ LOCK RELEASED\n", time(NULL));
     }
-    else if (strcmp(cmdPieces[0], "print") == 0) {
-        printTable();
+    else if (strcmp(cmdPieces[0], "print") == 0) {        
+	printTable();		
     }
 
     return NULL;
 }
 
+// Main function.
 int main() {
     // Open command file for reading
     commands = fopen("commands.txt", "r");
@@ -393,7 +400,7 @@ int main() {
     // Loop through the commands and create threads to handle each command
     for (int i = 0; i < threads; i++) {
         // Parse the next command
-        parseCommand(commands, cmdPieces);
+        parseCommand(commands, cmdPieces);		
 
         // Allocate memory for command arguments for each thread
         char** cmdArgs = (char**)malloc(3 * sizeof(char*));
@@ -411,7 +418,11 @@ int main() {
     }
 
     // Log that all threads have finished
-    fprintf(output, "Finished all threads.\n");
+    fprintf(output, "Finished all threads.\n\n");
+
+    // Print the number of lock acquisitions and releases
+    fprintf(output, "Number of lock acquisitions: %d\n", lockAcquisitions);
+    fprintf(output, "Number of lock releases: %d\n", lockReleases);
 
     // Print the hash table
     printTable();
