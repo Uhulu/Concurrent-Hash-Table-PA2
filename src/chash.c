@@ -1,12 +1,11 @@
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <pthread.h>
-#include <time.h> 
-#include <math.h>
+/*
+Matthew Itskovich
+Luke Knowles
+Julian Nutovits
+Jesuel Rosado Arroyo
+Elizabeth Teter
+*/
 #include "hash.h"
-#define MAX_LINE_LENGTH 1000
 
 // Function that creates the hash table.
 hashRecord** createTable() {
