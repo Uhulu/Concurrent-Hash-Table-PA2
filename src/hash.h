@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <pthread.h>
+#include <time.h> 
+#define MAX_LINE_LENGTH 1000
 
 // Hash Table Struct
 typedef struct hash_struct
