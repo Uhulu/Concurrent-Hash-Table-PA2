@@ -298,51 +298,62 @@ void cleanupHashTable() {
 }
 
 // read next line and split around commas
-void parseCommand(FILE* commands, char destination[][20]) {
-	int c;
-	int i = 0;
-	for (; (c = fgetc(commands)) != ','; i++)
-	{
-		destination[0][i] = c;
-	}
-	destination[0][i] = '\0';
-	for (i = 0; (c = fgetc(commands)) != ','; i++)
-	{
-		destination[1][i] = c;
-	}
-	destination[1][i] = '\0';
-	for (i = 0; (c = fgetc(commands)) != '\n' && c != EOF; i++)
-	{
-		destination[2][i] = c;
-	}
-	destination[2][i] = '\0';
+void parseCommand(FILE* commands, char destination[][50]) {
+    int c;
+    int i = 0;
+
+    // Read the first part of the command
+    for (; (c = fgetc(commands)) != ','; i++) {
+        destination[0][i] = c;
+    }
+    destination[0][i] = '\0';
+
+    // If the command is 'print', handle it differently
+    if (strcmp(destination[0], "print") == 0) {
+        strcpy(destination[1], "0");
+        strcpy(destination[2], "0");
+        return;
+    }
+
+    // Read the second part of the command
+    for (i = 0; (c = fgetc(commands)) != ','; i++) {
+        destination[1][i] = c;
+    }
+    destination[1][i] = '\0';
+
+    // Read the third part of the command
+    for (i = 0; (c = fgetc(commands)) != '\n' && c != EOF; i++) {
+        destination[2][i] = c;
+    }
+    destination[2][i] = '\0';
 }
 
 void* handleCommand(void* arg) {
-	char** cmdPieces = (char**)arg;
+    char** cmdPieces = (char**)arg;
 
-	if (!strcmp(cmdPieces[0], "insert")) {
-		insert((uint8_t*)cmdPieces[1], (uint32_t)atoi(cmdPieces[2]));
-	}
-	else if (!strcmp(cmdPieces[0], "delete")) {
-		delete((uint8_t*)cmdPieces[1]);
+    if (strcmp(cmdPieces[0], "insert") == 0) {
+        insert((uint8_t*)cmdPieces[1], (uint32_t)atoi(cmdPieces[2]));
+    }
+    else if (strcmp(cmdPieces[0], "delete") == 0) {
+        delete((uint8_t*)cmdPieces[1]);
+    }
+    else if (strcmp(cmdPieces[0], "search") == 0) {
+        uint32_t salary = search((uint8_t*)cmdPieces[1]);
 
-	}
-	else if (!strcmp(cmdPieces[0], "search")) {
+        if (salary != 0) {
+            fprintf(output, "SEARCH: %s FOUND with salary %u\n", cmdPieces[1], salary);
+        }
+        else {
+            fprintf(output, "SEARCH: %s NOT FOUND\n", cmdPieces[1]);
+        }
 
-		uint32_t salary = search((uint8_t*)cmdPieces[1]);
+        fprintf(output, "%ld: READ LOCK RELEASED\n", time(NULL));
+    }
+    else if (strcmp(cmdPieces[0], "print") == 0) {
+        printTable();
+    }
 
-		 if (salary != 0) {
-		     fprintf(output, "SEARCH: %s FOUND with salary %u\n", cmdPieces[1], salary);			 
-		 }
-		 else {
-		     fprintf(output, "SEARCH: %s NOT FOUND\n", cmdPieces[1]);
-		}
-
-		 fprintf(output, "%ld: READ LOCK RELEASED\n", time(NULL));
-	}
-
-	return NULL;
+    return NULL;
 }
 
 int main() {

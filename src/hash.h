@@ -24,16 +24,15 @@ void delete(uint8_t* key);
 uint32_t search(uint8_t* key);
 void cleanupHashTable();
 uint32_t search(uint8_t* key);
-void parseCommand(FILE* commands, char destination[][20]);
+void parseCommand(FILE* commands, char destination[][50]);
 void* handleCommand(void* arg);
-void printTable();
-int compareHashRecords(const void* a, const void* b);
+
 
 // Global Variables
 hashRecord** concurrentHashTable;
 pthread_t* threadsArray;
-int threads;
-int tableSize;
+size_t tableSize = 10;
+int numThreads;
 int lockAcquisitions = 0;
 int lockReleases = 0;
 pthread_mutex_t* write_locks;
